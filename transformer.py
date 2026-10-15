@@ -10,6 +10,7 @@ class LanguageModelingDataset(Dataset):
         super().__init__()
         with open(file_path, 'r') as f:
             text = f.read().split()
+            text = ' '.join(text)
 
         tokens = tokenizer.encode(str(text))
         
@@ -44,7 +45,7 @@ class PositionalEncoding(nn.Module):
         return x
 
 class AttentionHead(nn.Module):
-    def __init__(self, dmodel, headsize):
+    def __init__(self, dmodel, headsize, dropout):
         super().__init__()
         self.dmodel = dmodel
         self.wk = nn.Linear(dmodel, headsize)
@@ -53,6 +54,7 @@ class AttentionHead(nn.Module):
         self.wq = nn.Linear(dmodel, headsize)
         self.dropout = nn.Dropout(dropout)
     def forward(self, x):
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
         _, T, _ = x.shape
         q = self.wq(x)
         k = self.wk(x)
@@ -66,10 +68,10 @@ class AttentionHead(nn.Module):
         return qkv
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, numheads, dmodel):
+    def __init__(self, numheads, dmodel, dropout):
         super().__init__()
         head_dim = dmodel//numheads
-        self.heads = nn.ModuleList([AttentionHead(dmodel, head_dim) for i in range(numheads)])
+        self.heads = nn.ModuleList([AttentionHead(dmodel, head_dim, dropout) for i in range(numheads)])
         self.lin_proj = nn.Linear(head_dim*numheads, dmodel)
         self.dropout = nn.Dropout(dropout)
     def forward(self, x):
@@ -93,7 +95,7 @@ class LayerNorm(nn.Module):
         return self.gamma*layernorm + self.beta     # element-wise multipplication
 
 class FFN(nn.Module):
-    def __init__(self, dmodel):
+    def __init__(self, dmodel, dropout):
         super().__init__()
         self.l1 = nn.Linear(dmodel, dmodel*4)
         self.l2 = nn.Linear(dmodel*4, dmodel)
@@ -103,25 +105,25 @@ class FFN(nn.Module):
         return x
 
 class Block(nn.Module):
-    def __init__(self, dmodel, numheads):
+    def __init__(self, dmodel, numheads, dropout):
         super().__init__()
-        self.mha = MultiHeadAttention(numheads, dmodel)
+        self.mha = MultiHeadAttention(numheads, dmodel, dropout)
         self.ln1 = LayerNorm(dmodel)
         self.ln2 = LayerNorm(dmodel)
-        self.ffn = FFN(dmodel)
+        self.ffn = FFN(dmodel, dropout)
     def forward(self, x):
         x = x + self.mha(self.ln1(x))
         x = x + self.ffn(self.ln2(x))
         return x
 
 class Transformer(nn.Module):
-    def __init__(self, num_layers, max_seq_len, dmodel, numheads, vocab_size):
+    def __init__(self, num_layers, max_seq_len, dmodel, numheads, vocab_size, dropout):
         super().__init__()
         self.enc = nn.Embedding(vocab_size, dmodel)
         self.penc = PositionalEncoding(max_seq_len, dmodel)
         self.lm_head = nn.Linear(dmodel, vocab_size, bias=False)
         self.layers = nn.Sequential(*[
-            Block(dmodel, numheads) for _ in range(num_layers)
+            Block(dmodel, numheads, dropout) for _ in range(num_layers)
         ])
         self.ln_final = LayerNorm(dmodel)
         self.lm_head.weight = self.enc.weight   # weight tying
@@ -135,7 +137,7 @@ class Transformer(nn.Module):
         x = self.lm_head(x)
         return x
 
-    def generate(self, x, max_tokens, decoding='greedy', t=0.8, k=5):
+    def generate(self, x, max_tokens, decoding='greedy', t=0.7, k=5):
         """
         Generates tokens autoregressively.
         
