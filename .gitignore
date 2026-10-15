@@ -1,0 +1,11 @@
+src/
+.venv/
+.env
+__pycache__/
+
+# dataset files
+wikitext-2-raw
+input.txt
+wikitext.zip
+wikitext.zip.kaggle-partial
+

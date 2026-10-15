@@ -1,0 +1,27 @@
+[project]
+name = "transformer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "datasets>=5.1.0",
+    "kaggle>=2.2.4",
+    "matplotlib>=3.11.2",
+    "pandas>=3.0.6",
+    "tiktoken>=0.14.0",
+    "torch",
+    "torchinfo>=1.8.0",
+    "torchvision",
+    "tqdm>=4.70.1",
+]
+
+[project.scripts]
+transformer = "transformer:main"
+
+[build-system]
+requires = ["uv_build>=0.12.9,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+environments = ["sys_platform == 'linux'"]
