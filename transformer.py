@@ -9,8 +9,7 @@ class LanguageModelingDataset(Dataset):
     def __init__(self, file_path, tokenizer, context_length, split='train'):
         super().__init__()
         with open(file_path, 'r') as f:
-            text = f.read().split()
-            text = ' '.join(text)
+            text = f.read()
 
         tokens = tokenizer.encode(str(text))
         
@@ -54,13 +53,13 @@ class AttentionHead(nn.Module):
         self.wq = nn.Linear(dmodel, headsize)
         self.dropout = nn.Dropout(dropout)
     def forward(self, x):
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
         _, T, _ = x.shape
         q = self.wq(x)
         k = self.wk(x)
         v = self.wv(x)
         qk = q@k.transpose(-1, -2)
-        tril = torch.tril(torch.ones(T, T)).to(device)
+        tril = torch.tril(torch.ones(T, T))
+        self.register_buffer('tril', tril)
         qk = qk.masked_fill(tril == 0, float('-inf')) * q.shape[-1]**-0.5
         qk = F.softmax(qk, dim=-1)
         qk = self.dropout(qk)
@@ -90,7 +89,7 @@ class LayerNorm(nn.Module):
         self.eps = 1e-7
     def forward(self, x):
         mean = x.mean(dim=-1).unsqueeze(-1)
-        var = x.std(dim=-1).unsqueeze(-1)**2
+        var = x.var(dim=-1).unsqueeze(-1)
         layernorm = (x-mean)/(var+self.eps)**0.5
         return self.gamma*layernorm + self.beta     # element-wise multipplication
 
@@ -120,6 +119,7 @@ class Transformer(nn.Module):
     def __init__(self, num_layers, max_seq_len, dmodel, numheads, vocab_size, dropout):
         super().__init__()
         self.enc = nn.Embedding(vocab_size, dmodel)
+        nn.init.normal_(self.enc.weight, mean=0.0, std=0.02)
         self.penc = PositionalEncoding(max_seq_len, dmodel)
         self.lm_head = nn.Linear(dmodel, vocab_size, bias=False)
         self.layers = nn.Sequential(*[
@@ -137,7 +137,7 @@ class Transformer(nn.Module):
         x = self.lm_head(x)
         return x
 
-    def generate(self, x, max_tokens, decoding='greedy', t=0.7, k=5):
+    def generate(self, x, context_length, max_tokens, decoding='greedy', t=0.7, k=5):
         """
         Generates tokens autoregressively.
         
@@ -152,6 +152,8 @@ class Transformer(nn.Module):
         self.eval()
         with torch.no_grad():
             for _ in range(max_tokens):
+                x = x[:, -context_length:]
+
                 # Forward pass to get logits
                 logits = self(x)
                 
@@ -167,7 +169,7 @@ class Transformer(nn.Module):
                     next_token = torch.multinomial(scaled_logits, num_samples=1)
                 elif decoding == 'top-k':
                     top_k_v, top_k_i = torch.topk(next_token_logits, k)
-                    next_token_logits = torch.where(next_token_logits < top_k_v[:, -1], float('-inf'), next_token_logits)
+                    next_token_logits = torch.where(next_token_logits < top_k_v[:, -1:], float('-inf'), next_token_logits)
                     next_token_logits = F.softmax(next_token_logits)
                     next_token = torch.multinomial(next_token_logits, num_samples=1)
                 else:
