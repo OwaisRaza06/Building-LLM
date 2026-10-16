@@ -58,9 +58,9 @@ class AttentionHead(nn.Module):
         k = self.wk(x)
         v = self.wv(x)
         qk = q@k.transpose(-1, -2)
-        tril = torch.tril(torch.ones(T, T))
+        tril = torch.tril(torch.ones(T, T, device=qk.device))
         self.register_buffer('tril', tril)
-        qk = qk.masked_fill(tril == 0, float('-inf')) * q.shape[-1]**-0.5
+        qk = qk.masked_fill(self.tril == 0, float('-inf')) * q.shape[-1]**-0.5
         qk = F.softmax(qk, dim=-1)
         qk = self.dropout(qk)
         qkv = qk@v
